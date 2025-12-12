@@ -104,5 +104,65 @@ export class UsersService {
   remove(id: string) {
     return this.usersRepository.delete(id);
   }
+  async findAllWithFilters(query: { skip?: number; take?: number; search?: string; status?: string; type?: string }) {
+    const qb = this.usersRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.shipments', 'shipment')
+      .orderBy('user.createdAt', 'DESC')
+      .skip(query.skip || 0)
+      .take(query.take || 10);
+
+    if (query.search) {
+      qb.andWhere('(user.firstName ILIKE :search OR user.lastName ILIKE :search OR user.email ILIKE :search OR user.legalName ILIKE :search)', { search: `%${query.search}%` });
+    }
+
+    if (query.status) {
+      qb.andWhere('user.status = :status', { status: query.status });
+    }
+
+    if (query.type) {
+      qb.andWhere('user.type = :type', { type: query.type });
+    }
+
+    const [users, total] = await qb.getManyAndCount();
+
+    // Calculate basic stats for each user (shipment count, etc.)
+    // In a real app, this might be heavy, so we might want to select counts via subquery.
+    const usersWithStats = users.map(u => ({
+      ...u,
+      shipmentsCount: u.shipments.length, // This is efficient only if pagination is small. Valid for <50 items.
+      // Remove huge shipment array from response
+      shipments: undefined,
+      lastActive: u.updatedAt, // Mock last active
+    }));
+
+    return {
+      data: usersWithStats,
+      total,
+      page: Math.floor((query.skip || 0) / (query.take || 10)) + 1,
+      lastPage: Math.ceil(total / (query.take || 10)),
+    };
+  }
+
+  async getUserOverviewStats() {
+    const total = await this.usersRepository.count();
+    const active = await this.usersRepository.count({ where: { status: 'Active' } });
+    const pending = await this.usersRepository.count({ where: { status: 'Pending' } });
+    const suspended = await this.usersRepository.count({ where: { status: 'Suspended' } });
+
+    // Growth (Mock for now, or compare with last month)
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const newUsers = await this.usersRepository.createQueryBuilder('user')
+      .where('user.createdAt >= :lastMonth', { lastMonth })
+      .getCount();
+
+    return {
+      total,
+      active,
+      pending,
+      suspended,
+      newThisMonth: newUsers,
+    };
+  }
 }
 

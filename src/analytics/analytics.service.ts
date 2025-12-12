@@ -2,13 +2,51 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Shipment } from '../shipments/entities/shipment.entity';
+import { ActivityLog } from './entities/activity-log.entity';
 
 @Injectable()
 export class AnalyticsService {
     constructor(
         @InjectRepository(Shipment)
         private shipmentsRepository: Repository<Shipment>,
+        @InjectRepository(ActivityLog)
+        private activityLogRepository: Repository<ActivityLog>,
     ) { }
+
+    async logActivity(userId: string, action: string, type: string, description?: string, meta?: { device?: string, ip?: string, location?: string }) {
+        // In a real app, user might be partial if not found, but we store ID usually or link entity.
+        // Assuming userId relates to a valid User entity.
+        const log = this.activityLogRepository.create({
+            user: { id: userId }, // TypeORM allows partial relation object for ID
+            action,
+            type,
+            description,
+            device: meta?.device,
+            ip: meta?.ip,
+            location: meta?.location,
+        });
+        return this.activityLogRepository.save(log);
+    }
+
+    async getGlobalActivityLogs(limit = 50, filters?: { type?: string; startDate?: Date; endDate?: Date; search?: string }) {
+        const query = this.activityLogRepository.createQueryBuilder('log')
+            .leftJoinAndSelect('log.user', 'user')
+            .orderBy('log.createdAt', 'DESC')
+            .take(limit);
+
+        if (filters?.type && filters.type !== 'all') {
+            query.andWhere('log.type = :type', { type: filters.type });
+        }
+
+        if (filters?.search) {
+            query.andWhere('(log.action ILIKE :search OR log.description ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search OR user.email ILIKE :search)', { search: `%${filters.search}%` });
+        }
+
+        // Add date filtering logic if needed
+
+        return query.getMany();
+    }
+
 
     async getOverview(userId: string) {
         const shipments = await this.shipmentsRepository.find({

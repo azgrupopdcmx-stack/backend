@@ -19,6 +19,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { RulesModule } from './rules/rules.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { HealthModule } from './health/health.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { HealthModule } from './health/health.module';
     UPSModule,
     ComplianceModule,
     HealthModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
