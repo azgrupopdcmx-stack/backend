@@ -1,17 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
-
 
 import { EstafetaModule } from './carriers/estafeta/estafeta.module';
 import { FedExModule } from './carriers/fedex/fedex.module';
 import { DHLModule } from './carriers/dhl/dhl.module';
 import { UPSModule } from './carriers/ups/ups.module';
+
 import { ShipmentsModule } from './shipments/shipments.module';
 import { AuthModule } from './auth/auth.module';
 import { AddressesModule } from './addresses/addresses.module';
@@ -23,32 +25,20 @@ import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
+    ConfigModule.forRoot({ isGlobal: true }),
+
     ThrottlerModule.forRoot([
-      {
-        name: 'short',
-        ttl: 1000,    // 1 second
-        limit: 3,      // 3 requests per second
-      },
-      {
-        name: 'medium',
-        ttl: 10000,   // 10 seconds
-        limit: 20,     // 20 requests per 10 seconds
-      },
-      {
-        name: 'long',
-        ttl: 60000,   // 1 minute
-        limit: 100,    // 100 requests per minute
-      },
+      { name: 'short', ttl: 1000, limit: 3 },
+      { name: 'medium', ttl: 10000, limit: 20 },
+      { name: 'long', ttl: 60000, limit: 100 },
     ]),
+
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT'),
+        port: parseInt(configService.get<string>('DB_PORT') ?? '5432', 10),
         username: configService.get<string>('DB_USERNAME'),
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
@@ -57,16 +47,30 @@ import { AdminModule } from './admin/admin.module';
       }),
       inject: [ConfigService],
     }),
+
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          url: configService.get<string>('REDIS_URL'),
+        },
+      }),
+      inject: [ConfigService],
+    }),
+    BullModule.registerQueue({ name: 'integrations' }),
+
     UsersModule,
     ShipmentsModule,
     AuthModule,
     AddressesModule,
     AnalyticsModule,
     RulesModule,
+
     EstafetaModule,
     FedExModule,
     DHLModule,
     UPSModule,
+
     ComplianceModule,
     HealthModule,
     AdminModule,
@@ -74,10 +78,7 @@ import { AdminModule } from './admin/admin.module';
   controllers: [AppController],
   providers: [
     AppService,
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
-export class AppModule { }
+export class AppModule {}
